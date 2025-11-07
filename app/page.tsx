@@ -1,7 +1,6 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useWidgetProps,
   useMaxHeight,
@@ -10,21 +9,136 @@ import {
   useIsChatGptApp,
 } from "./hooks";
 
+type ToolOutput = {
+  // Backwards compatibility with the starter tool
+  name?: string;
+  result?: { structuredContent?: { name?: string } };
+  // Live kline tool payload
+  symbol?: string;
+  interval?: string;
+  market?: "spot" | "futures";
+};
+
 export default function Home() {
-  const toolOutput = useWidgetProps<{
-    name?: string;
-    result?: { structuredContent?: { name?: string } };
-  }>();
+  const toolOutput = useWidgetProps<ToolOutput>(() => ({
+    symbol: "BTCUSDT",
+    interval: "1m",
+    market: "futures",
+  }));
   const maxHeight = useMaxHeight() ?? undefined;
   const displayMode = useDisplayMode();
   const requestDisplayMode = useRequestDisplayMode();
   const isChatGptApp = useIsChatGptApp();
 
   const name = toolOutput?.result?.structuredContent?.name || toolOutput?.name;
+  const symbol = (toolOutput?.symbol ?? "").toUpperCase();
+  const interval = toolOutput?.interval ?? "1m";
+  const market = toolOutput?.market ?? "futures";
+
+  const [ready, setReady] = useState(false);
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<any>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const baseUrl = useMemo(
+    () => (typeof window !== "undefined" ? window.innerBaseUrl : ""),
+    []
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      if (!chartContainerRef.current) return;
+      const { init, dispose } = (await import("klinecharts")) as any;
+      if (disposed) return;
+      // Dispose previous chart if any
+      if (chartRef.current) {
+        try {
+          dispose(chartRef.current);
+        } catch {}
+        chartRef.current = null;
+      }
+      chartRef.current = init(chartContainerRef.current, {
+        styles: { candle: { priceMark: { show: true } } },
+      });
+      setReady(true);
+
+      return () => {
+        try {
+          if (chartRef.current) dispose(chartRef.current);
+        } catch {}
+        chartRef.current = null;
+      };
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Reconnect stream when symbol or interval changes
+    if (!ready || !chartRef.current) return;
+    // Close any existing stream
+    if (eventSourceRef.current) {
+      try {
+        eventSourceRef.current.close();
+      } catch {}
+      eventSourceRef.current = null;
+    }
+    if (!symbol) return;
+
+    const url = `${baseUrl}/api/kline?symbol=${encodeURIComponent(
+      symbol
+    )}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(
+      market
+    )}&limit=400`;
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    let seeded = false;
+
+    es.addEventListener("init", (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const data = payload?.data || [];
+        if (chartRef.current && Array.isArray(data)) {
+          chartRef.current.applyNewData(data);
+          seeded = true;
+        }
+      } catch {}
+    });
+
+    es.addEventListener("kline", (e: MessageEvent) => {
+      try {
+        const k = JSON.parse(e.data);
+        if (!k || !seeded) return;
+        if (chartRef.current) {
+          chartRef.current.updateData({
+            timestamp: Number(k.timestamp),
+            open: Number(k.open),
+            high: Number(k.high),
+            low: Number(k.low),
+            close: Number(k.close),
+            volume: Number(k.volume),
+          });
+        }
+      } catch {}
+    });
+
+    es.addEventListener("error", () => {
+      // Let EventSource auto-retry with backoff; no-op here
+    });
+
+    return () => {
+      try {
+        es.close();
+      } catch {}
+      eventSourceRef.current = null;
+    };
+  }, [symbol, interval, ready, baseUrl]);
 
   return (
     <div
-      className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center p-8 pb-20 gap-16 sm:p-20"
+      className="font-sans grid items-center justify-items-center p-4"
       style={{
         maxHeight,
         height: displayMode === "fullscreen" ? maxHeight : undefined,
@@ -52,7 +166,7 @@ export default function Home() {
           </svg>
         </button>
       )}
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
+      <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
         {!isChatGptApp && (
           <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 w-full">
             <div className="flex items-center gap-3">
@@ -88,40 +202,9 @@ export default function Home() {
             </div>
           </div>
         )}
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Welcome to the ChatGPT Apps SDK Next.js Starter
-          </li>
-          <li className="mb-2 tracking-[-.01em]">
-            Name returned from tool call: {name ?? "..."}
-          </li>
-          <li className="mb-2 tracking-[-.01em]">MCP server path: /mcp</li>
-        </ol>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <Link
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            prefetch={false}
-            href="/custom-page"
-          >
-            Visit another page
-          </Link>
-          <a
-            href="https://vercel.com/templates/ai/chatgpt-app-with-next-js"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            Deploy on Vercel
-          </a>
+        <div className="w-full border border-slate-200 dark:border-slate-800 rounded-md overflow-hidden" style={{ height: displayMode === "fullscreen" ? (maxHeight ? Math.max(200, maxHeight - 140) : 500) : 420 }}>
+          <div ref={chartContainerRef} className="w-full h-full" />
         </div>
       </main>
     </div>

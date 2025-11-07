@@ -13,6 +13,7 @@ export { useOpenAIGlobal } from "./use-openai-global";
 // Additional hooks
 export { useMaxHeight } from "./use-max-height";
 export { useIsChatGptApp } from "./use-is-chatgpt-app";
+export { useTheme } from "./use-theme";
 
 // Types
 export type * from "./types";

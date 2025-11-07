@@ -96,6 +96,66 @@ const handler = createMcpHandler(async (server) => {
       };
     }
   );
+
+  // Live Kline chart tool: sets symbol/interval to drive UI
+  server.registerTool(
+    "live_kline",
+    {
+      title: "Live Kline",
+      description:
+        "Render a live candlestick chart from Binance via websocket. Provide a symbol like BTCUSDT and optional interval (default 1m).",
+      inputSchema: {
+        symbol: z
+          .string()
+          .min(3)
+          .describe("Binance trading pair symbol, e.g., BTCUSDT, ETHUSDT"),
+        interval: z
+          .enum([
+            "1m",
+            "3m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "4h",
+            "6h",
+            "8h",
+            "12h",
+            "1d",
+            "3d",
+            "1w",
+            "1M",
+          ])
+          .optional()
+          .describe("Kline interval (default 1m)"),
+        market: z
+          .enum(["spot", "futures"]) 
+          .optional()
+          .describe("Market type: spot or futures (default futures)"),
+      },
+      _meta: widgetMeta(contentWidget),
+    },
+    async ({ symbol, interval = "1m", market = "futures" }) => {
+      const sym = String(symbol || "").toUpperCase();
+      const iv = String(interval);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Streaming ${sym} (${iv}) on ${market}`,
+          },
+        ],
+        structuredContent: {
+          symbol: sym,
+          interval: iv,
+          market,
+          timestamp: new Date().toISOString(),
+        },
+        _meta: widgetMeta(contentWidget),
+      };
+    }
+  );
 });
 
 export const GET = handler;

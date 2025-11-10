@@ -8,43 +8,49 @@ import {
   useRequestDisplayMode,
   useIsChatGptApp,
 } from "./hooks";
+import PriceWithDiff from "./components/PriceWithDiff";
+import Skeleton from "./components/Skeleton";
 
 type ToolOutput = {
-  // Backwards compatibility with the starter tool
-  name?: string;
-  result?: { structuredContent?: { name?: string } };
   // Live kline tool payload
   symbol?: string;
   interval?: string;
   market?: "spot" | "futures";
+  chartType?: "candle_solid" | "candle_stroke" | "candle_up_stroke" | "candle_down_stroke" | "ohlc" | "area";
+  timezone?: string;
+  indicators?: Array<{ name: string; params?: number[]; pane?: "main" | "sub" }>;
 };
 
 export default function Home() {
-  const toolOutput = useWidgetProps<ToolOutput>(() => ({
-    symbol: "BTCUSDT",
-    interval: "1m",
-    market: "futures",
-  }));
+  const toolOutput = useWidgetProps<ToolOutput>();
   const maxHeight = useMaxHeight() ?? undefined;
   const displayMode = useDisplayMode();
   const requestDisplayMode = useRequestDisplayMode();
   const isChatGptApp = useIsChatGptApp();
 
-  const name = toolOutput?.result?.structuredContent?.name || toolOutput?.name;
-  const symbol = (toolOutput?.symbol ?? "").toUpperCase();
+  const symbol = toolOutput?.symbol ? toolOutput.symbol.toUpperCase() : "";
   const interval = toolOutput?.interval ?? "1m";
   const market = toolOutput?.market ?? "futures";
+  const chartType = toolOutput?.chartType ?? "candle_solid";
+  const timezone = toolOutput?.timezone;
+  const indicators = toolOutput?.indicators ?? [];
+  
+  const hasToolData = !!toolOutput;
 
   const [ready, setReady] = useState(false);
+  const [currentPrice, setCurrentPrice] = useState<number>(0);
+  const [priceChange24h, setPriceChange24h] = useState<number>(0);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<any>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const tickerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const baseUrl = useMemo(
     () => (typeof window !== "undefined" ? window.innerBaseUrl : ""),
     []
   );
 
   useEffect(() => {
+    if (!hasToolData) return;
     let disposed = false;
     (async () => {
       if (!chartContainerRef.current) return;
@@ -58,8 +64,16 @@ export default function Home() {
         chartRef.current = null;
       }
       chartRef.current = init(chartContainerRef.current, {
-        styles: { candle: { priceMark: { show: true } } },
+        styles: { 
+          candle: { 
+            priceMark: { show: true },
+            type: chartType as any
+          } 
+        },
       });
+      if (timezone && chartRef.current) {
+        chartRef.current.setTimezone(timezone);
+      }
       setReady(true);
 
       return () => {
@@ -72,11 +86,73 @@ export default function Home() {
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [chartType, timezone, hasToolData]);
+
+  // Update chart type when it changes
+  useEffect(() => {
+    if (!ready || !chartRef.current || !hasToolData) return;
+    chartRef.current.setStyles({
+      candle: {
+        type: chartType as any
+      }
+    });
+  }, [chartType, ready, hasToolData]);
+
+  // Update timezone when it changes
+  useEffect(() => {
+    if (!ready || !chartRef.current || !hasToolData) return;
+    if (timezone) {
+      chartRef.current.setTimezone(timezone);
+    }
+  }, [timezone, ready, hasToolData]);
+
+  // Update indicators when they change
+  useEffect(() => {
+    if (!ready || !chartRef.current || !hasToolData) return;
+    
+    // Remove all existing indicators first
+    try {
+      const allIndicators = chartRef.current.getIndicators();
+      if (Array.isArray(allIndicators)) {
+        allIndicators.forEach((ind: any) => {
+          try {
+            if (ind && ind.id) {
+              chartRef.current.removeIndicator(ind.id);
+            }
+          } catch {}
+        });
+      }
+    } catch {}
+    
+    // Add new indicators with parameters
+    if (indicators.length > 0) {
+      indicators.forEach((indicator) => {
+        try {
+          const isMainPane = indicator.pane !== "sub";
+          // First parameter: indicator config object with name and calcParams
+          const indicatorConfig: any = {
+            name: indicator.name,
+          };
+          if (indicator.params && Array.isArray(indicator.params) && indicator.params.length > 0) {
+            indicatorConfig.calcParams = indicator.params;
+          }
+          
+          // Second parameter: whether to replace existing (false = add new)
+          // Third parameter: pane options - main pane needs id: 'candle_pane', sub pane doesn't need id
+          const paneOptions = isMainPane ? { id: 'candle_pane' } : {};
+          
+          chartRef.current.createIndicator(indicatorConfig, true, paneOptions);
+        } catch (err) {
+          // Silently fail if indicator is invalid
+          console.warn('Failed to create indicator:', indicator.name, err);
+        }
+      });
+    }
+  }, [indicators, ready, hasToolData]);
 
   useEffect(() => {
     // Reconnect stream when symbol or interval changes
-    if (!ready || !chartRef.current) return;
+    if (!ready || !chartRef.current || !hasToolData) return;
     // Close any existing stream
     if (eventSourceRef.current) {
       try {
@@ -101,8 +177,32 @@ export default function Home() {
         const payload = JSON.parse(e.data);
         const data = payload?.data || [];
         if (chartRef.current && Array.isArray(data)) {
-          chartRef.current.applyNewData(data);
+          chartRef.current.setStyles('dark')
+          chartRef.current.applyNewData(data, true);
           seeded = true;
+
+          // Setup loadMore after initial data is loaded
+          if (chartRef.current && typeof chartRef.current.loadMore === "function") {
+            chartRef.current.loadMore((timestamp: number) => {
+              // Fetch historical data
+              const historyUrl = `${baseUrl}/api/kline/history?symbol=${encodeURIComponent(
+                symbol
+              )}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(
+                market
+              )}&limit=100&endTime=${timestamp}`;
+              
+              fetch(historyUrl)
+                .then((res) => res.json())
+                .then((result) => {
+                  if (chartRef.current && result?.data && Array.isArray(result.data)) {
+                    chartRef.current.applyMoreData(result.data, true);
+                  }
+                })
+                .catch(() => {
+                  // Silently fail
+                });
+            });
+          }
         }
       } catch {}
     });
@@ -111,13 +211,15 @@ export default function Home() {
       try {
         const k = JSON.parse(e.data);
         if (!k || !seeded) return;
+        const closePrice = Number(k.close);
+        setCurrentPrice(closePrice);
         if (chartRef.current) {
           chartRef.current.updateData({
             timestamp: Number(k.timestamp),
             open: Number(k.open),
             high: Number(k.high),
             low: Number(k.low),
-            close: Number(k.close),
+            close: closePrice,
             volume: Number(k.volume),
           });
         }
@@ -134,7 +236,53 @@ export default function Home() {
       } catch {}
       eventSourceRef.current = null;
     };
-  }, [symbol, interval, ready, baseUrl]);
+  }, [symbol, interval, market, ready, baseUrl, hasToolData]);
+
+  // Fetch 24hr ticker data
+  useEffect(() => {
+    if (!symbol || !hasToolData) return;
+
+    const fetchTicker = async () => {
+      try {
+        const url = `${baseUrl}/api/ticker/24hr?symbol=${encodeURIComponent(
+          symbol
+        )}&market=${encodeURIComponent(market)}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.price) setCurrentPrice(data.price);
+          if (data.priceChangePercent !== undefined)
+            setPriceChange24h(data.priceChangePercent);
+        }
+      } catch {}
+    };
+
+    fetchTicker();
+    tickerIntervalRef.current = setInterval(fetchTicker, 5000);
+
+    return () => {
+      if (tickerIntervalRef.current) {
+        clearInterval(tickerIntervalRef.current);
+        tickerIntervalRef.current = null;
+      }
+    };
+  }, [symbol, market, baseUrl, hasToolData]);
+
+  if (!hasToolData) {
+    return (
+      <div
+        className="font-sans grid items-center justify-items-center p-4"
+        style={{
+          maxHeight,
+          height: displayMode === "fullscreen" ? maxHeight : undefined,
+        }}
+      >
+        <div className="w-full rounded-md overflow-hidden" style={{ height: displayMode === "fullscreen" ? (maxHeight ? Math.max(200, maxHeight - 140) : 500) : 420 }}>
+          <Skeleton width="100%" height="100%" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -167,39 +315,10 @@ export default function Home() {
         </button>
       )}
       <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
-        {!isChatGptApp && (
-          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 w-full">
-            <div className="flex items-center gap-3">
-              <svg
-                className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
-                  This app relies on data from a ChatGPT session.
-                </p>
-                <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
-                  No{" "}
-                  <a
-                    href="https://developers.openai.com/apps-sdk/reference"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:no-underline font-mono bg-blue-100 dark:bg-blue-900 px-1 py-0.5 rounded"
-                  >
-                    window.openai
-                  </a>{" "}
-                  property detected
-                </p>
-              </div>
-            </div>
+
+        {currentPrice > 0 && (
+          <div className="w-full mb-3">
+            <PriceWithDiff value={currentPrice} diff={priceChange24h} />
           </div>
         )}
 

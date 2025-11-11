@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import Binance from "node-binance-api";
+import { WebSocket } from "ws";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,10 +37,8 @@ export async function GET(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
-  let wsEndpoint: string | null = null;
+  let ws: WebSocket | null = null;
   let closed = false;
-
-  const binance = new (Binance as any)();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -49,92 +47,81 @@ export async function GET(req: NextRequest) {
 
       // Seed history via REST then open appropriate websocket by market
       try {
+        let restUrl: string;
+        let wsUrl: string;
+        const lowerSymbol = symbol.toLowerCase();
+        
+        const params = new URLSearchParams({
+          symbol,
+          interval,
+          limit: limit.toString(),
+        });
+
         if (market === "spot") {
-          (binance as any).candlesticks(
-            symbol,
-            interval,
-            (error: any, ticks: any[]) => {
-              if (error) {
-                controller.enqueue(
-                  encoder.encode(
-                    `event: error\n` + `data: ${JSON.stringify({ message: String(error) })}\n\n`
-                  )
-                );
-                return;
-              }
-              const data = (ticks || []).map((t) => ({
-                timestamp: Number(t[0]),
-                open: Number(t[1]),
-                high: Number(t[2]),
-                low: Number(t[3]),
-                close: Number(t[4]),
-                volume: Number(t[5]),
-              }));
-              controller.enqueue(
-                encoder.encode(
-                  `event: init\n` + `data: ${JSON.stringify({ symbol, interval, market, data })}\n\n`
-                )
-              );
-              wsEndpoint = (binance as any).websockets.candlesticks(
-                symbol,
-                interval,
-                (candlesticks: any) => {
-                  if (closed) return;
-                  const ticks = candlesticks.k;
-                  const kl = {
-                    timestamp: Number(ticks.t),
-                    open: Number(ticks.o),
-                    high: Number(ticks.h),
-                    low: Number(ticks.l),
-                    close: Number(ticks.c),
-                    volume: Number(ticks.v),
-                    isFinal: Boolean(ticks.x),
-                  };
-                  controller.enqueue(
-                    encoder.encode(`event: kline\n` + `data: ${JSON.stringify(kl)}\n\n`)
-                  );
-                }
-              );
-            },
-            { limit }
-          );
+          restUrl = `https://api.binance.com/api/v3/klines?${params}`;
+          wsUrl = `wss://stream.binance.com:9443/ws/${lowerSymbol}@kline_${interval}`;
         } else {
           // USDT-M futures
-          const candles = await (binance as any).futuresCandlesticks(symbol, interval, { limit });
-          const data = (candles || []).map((c: any) => ({
-            timestamp: Number(c.openTime),
-            open: Number(c.open),
-            high: Number(c.high),
-            low: Number(c.low),
-            close: Number(c.close),
-            volume: Number(c.volume),
-          }));
+          restUrl = `https://fapi.binance.com/fapi/v1/klines?${params}`;
+          wsUrl = `wss://fstream.binance.com/ws/${lowerSymbol}@kline_${interval}`;
+        }
+
+        // Fetch initial history
+        const response = await fetch(restUrl);
+        if (!response.ok) {
+          throw new Error(`Binance API error: ${response.status}`);
+        }
+        
+        const candles = await response.json();
+        const data = (candles || []).map((c: any) => ({
+          timestamp: Number(c[0]),
+          open: Number(c[1]),
+          high: Number(c[2]),
+          low: Number(c[3]),
+          close: Number(c[4]),
+          volume: Number(c[5]),
+        }));
+        
+        controller.enqueue(
+          encoder.encode(
+            `event: init\n` + `data: ${JSON.stringify({ symbol, interval, market, data })}\n\n`
+          )
+        );
+
+        // Open WebSocket for real-time updates
+        ws = new WebSocket(wsUrl);
+        
+        ws.on('message', (data: Buffer) => {
+          if (closed) return;
+          try {
+            const msg = JSON.parse(data.toString());
+            const ticks = msg.k;
+            const kl = {
+              timestamp: Number(ticks.t),
+              open: Number(ticks.o),
+              high: Number(ticks.h),
+              low: Number(ticks.l),
+              close: Number(ticks.c),
+              volume: Number(ticks.v),
+              isFinal: Boolean(ticks.x),
+            };
+            controller.enqueue(
+              encoder.encode(`event: kline\n` + `data: ${JSON.stringify(kl)}\n\n`)
+            );
+          } catch (err) {
+            // Ignore parse errors
+          }
+        });
+
+        ws.on('error', (err: Error) => {
+          if (closed) return;
           controller.enqueue(
             encoder.encode(
-              `event: init\n` + `data: ${JSON.stringify({ symbol, interval, market, data })}\n\n`
+              `event: error\n` + `data: ${JSON.stringify({ message: String(err) })}\n\n`
             )
           );
-          wsEndpoint = (binance as any).websockets.futuresCandlesticks(
-            symbol,
-            interval,
-            (candlesticks: any) => {
-              if (closed) return;
-              const ticks = candlesticks.k;
-              const kl = {
-                timestamp: Number(ticks.t),
-                open: Number(ticks.o),
-                high: Number(ticks.h),
-                low: Number(ticks.l),
-                close: Number(ticks.c),
-                volume: Number(ticks.v),
-                isFinal: Boolean(ticks.x),
-              };
-              controller.enqueue(
-                encoder.encode(`event: kline\n` + `data: ${JSON.stringify(kl)}\n\n`)
-              );
-            }
-          );
-        }
+        });
+
       } catch (err) {
         controller.enqueue(
           encoder.encode(
@@ -157,8 +144,9 @@ export async function GET(req: NextRequest) {
         closed = true;
         clearInterval(heartbeat);
         try {
-          if (wsEndpoint != null) {
-            (binance as any).websockets.terminate(wsEndpoint);
+          if (ws) {
+            ws.close();
+            ws = null;
           }
         } catch {}
       };

@@ -3,20 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_OPTIONS='--no-deprecation' next dev --turbopack",
-    "build": "NODE_OPTIONS='--no-deprecation' next build --turbopack",
-    "start": "NODE_OPTIONS='--no-deprecation' next start"
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.0",
     "@number-flow/react": "^0.5.10",
+    "@types/ws": "^8.18.1",
     "clsx": "^2.1.1",
     "klinecharts": "^9.8.12",
     "mcp-handler": "^1.0.3",
     "next": "15.5.4",
-    "node-binance-api": "^1.0.17",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "ws": "^8.18.3",
     "zod": "3.24.2"
   },
   "devDependencies": {

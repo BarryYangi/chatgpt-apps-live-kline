@@ -1,5 +1,4 @@
 import type { NextRequest } from "next/server";
-import Binance from "node-binance-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,54 +37,41 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const binance = new (Binance as any)();
-    let data: any[] = [];
+    let url: string;
+    const params = new URLSearchParams({
+      symbol,
+      interval,
+      limit: limit.toString(),
+    });
+    
+    if (endTime) {
+      params.append('endTime', endTime);
+    }
 
     if (market === "spot") {
-      const options: any = { limit };
-      if (endTime) {
-        options.endTime = Number(endTime);
-      }
-      const ticks = await new Promise<any[]>((resolve, reject) => {
-        (binance as any).candlesticks(
-          symbol,
-          interval,
-          (error: any, result: any[]) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve(result || []);
-          },
-          options
-        );
-      });
-      // Binance returns data from oldest to newest, which is what we need for applyMoreData
-      data = (ticks || []).map((t) => ({
-        timestamp: Number(t[0]),
-        open: Number(t[1]),
-        high: Number(t[2]),
-        low: Number(t[3]),
-        close: Number(t[4]),
-        volume: Number(t[5]),
-      }));
+      url = `https://api.binance.com/api/v3/klines?${params}`;
     } else {
       // USDT-M futures
-      const options: any = { limit };
-      if (endTime) {
-        options.endTime = Number(endTime);
-      }
-      const candles = await (binance as any).futuresCandlesticks(symbol, interval, options);
-      // Binance returns data from oldest to newest, which is what we need for applyMoreData
-      data = (candles || []).map((c: any) => ({
-        timestamp: Number(c.openTime),
-        open: Number(c.open),
-        high: Number(c.high),
-        low: Number(c.low),
-        close: Number(c.close),
-        volume: Number(c.volume),
-      }));
+      url = `https://fapi.binance.com/fapi/v1/klines?${params}`;
     }
+
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Binance API error: ${response.status}`);
+    }
+    
+    const candles = await response.json();
+    
+    // Binance returns data from oldest to newest, which is what we need for applyMoreData
+    const data = (candles || []).map((c: any) => ({
+      timestamp: Number(c[0]),
+      open: Number(c[1]),
+      high: Number(c[2]),
+      low: Number(c[3]),
+      close: Number(c[4]),
+      volume: Number(c[5]),
+    }));
 
     return Response.json({ data });
   } catch (err) {

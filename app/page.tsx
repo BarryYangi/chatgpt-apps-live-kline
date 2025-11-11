@@ -195,8 +195,10 @@ export default function Home() {
           }
           
           // Second parameter: whether to replace existing (false = add new)
-          // Third parameter: pane options - main pane needs id: 'candle_pane', sub pane doesn't need id
-          const paneOptions = isMainPane ? { id: 'candle_pane' } : {};
+          // Third parameter: pane options - use fixed pane id to prevent duplicate panes
+          const paneOptions = isMainPane 
+            ? { id: 'candle_pane' } 
+            : { id: `indicator_${indicator.name}_pane` };
           
           chartRef.current.createIndicator(indicatorConfig, true, paneOptions);
         } catch (err) {

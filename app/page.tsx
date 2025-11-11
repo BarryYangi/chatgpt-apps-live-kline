@@ -64,8 +64,8 @@ export default function Home() {
   const market = toolOutput?.market ?? "futures";
   const chartType = toolOutput?.chartType ?? "candle_solid";
   const timezone = toolOutput?.timezone;
-  const indicators = toolOutput?.indicators ?? [];
-  const overlays = toolOutput?.overlays ?? [];
+  const indicators = useMemo(() => toolOutput?.indicators ?? [], [toolOutput?.indicators]);
+  const overlays = useMemo(() => toolOutput?.overlays ?? [], [toolOutput?.overlays]);
   
   const hasToolData = !!toolOutput;
 

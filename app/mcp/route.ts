@@ -63,7 +63,7 @@ const handler = createMcpHandler(async (server) => {
           _meta: {
             "openai/widgetDescription": liveKlineWidget.description,
             "openai/widgetPrefersBorder": true,
-            "openai/widgetDomain": liveKlineWidget.widgetDomain,
+            // "openai/widgetDomain": liveKlineWidget.widgetDomain,
           },
         },
       ],

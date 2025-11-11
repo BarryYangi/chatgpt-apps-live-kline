@@ -64,8 +64,8 @@ export default function Home() {
   const market = toolOutput?.market ?? "futures";
   const chartType = toolOutput?.chartType ?? "candle_solid";
   const timezone = toolOutput?.timezone;
-  const indicators = useMemo(() => toolOutput?.indicators ?? [], [toolOutput?.indicators]);
-  const overlays = useMemo(() => toolOutput?.overlays ?? [], [toolOutput?.overlays]);
+  const indicators = toolOutput?.indicators ?? [];
+  const overlays = toolOutput?.overlays ?? [];
   
   const hasToolData = !!toolOutput;
 
@@ -167,13 +167,31 @@ export default function Home() {
   useEffect(() => {
     if (!ready || !chartRef.current || !hasToolData) return;
     
-    // Remove all existing indicators first
+    // Remove all existing indicators and their panes
     try {
       const allIndicators = chartRef.current.getIndicators();
       if (Array.isArray(allIndicators)) {
+        // Group indicators by pane
+        const paneIds = new Set<string>();
+        allIndicators.forEach((ind: any) => {
+          if (ind && ind.paneId) {
+            paneIds.add(ind.paneId);
+          }
+        });
+        
+        // Remove all non-main panes first
+        paneIds.forEach((paneId: string) => {
+          if (paneId !== 'candle_pane') {
+            try {
+              chartRef.current.removePane(paneId);
+            } catch {}
+          }
+        });
+        
+        // Then remove indicators from main pane
         allIndicators.forEach((ind: any) => {
           try {
-            if (ind && ind.id) {
+            if (ind && ind.id && ind.paneId === 'candle_pane') {
               chartRef.current.removeIndicator(ind.id);
             }
           } catch {}
@@ -186,7 +204,6 @@ export default function Home() {
       indicators.forEach((indicator) => {
         try {
           const isMainPane = indicator.pane !== "sub";
-          // First parameter: indicator config object with name and calcParams
           const indicatorConfig: any = {
             name: indicator.name,
           };
@@ -194,13 +211,12 @@ export default function Home() {
             indicatorConfig.calcParams = indicator.params;
           }
           
-          // Second parameter: whether to replace existing (false = add new)
-          // Third parameter: pane options - main pane needs id: 'candle_pane', sub pane doesn't need id
-          const paneOptions = isMainPane ? { id: 'candle_pane' } : {};
-          
-          chartRef.current.createIndicator(indicatorConfig, true, paneOptions);
+          if (isMainPane) {
+            chartRef.current.createIndicator(indicatorConfig, true, { id: 'candle_pane' });
+          } else {
+            chartRef.current.createIndicator(indicatorConfig, false);
+          }
         } catch (err) {
-          // Silently fail if indicator is invalid
           console.warn('Failed to create indicator:', indicator.name, err);
         }
       });

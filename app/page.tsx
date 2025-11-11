@@ -7,6 +7,7 @@ import {
   useDisplayMode,
   useRequestDisplayMode,
   useIsChatGptApp,
+  useTheme,
 } from "./hooks";
 import PriceWithDiff from "./components/PriceWithDiff";
 import Skeleton from "./components/Skeleton";
@@ -19,6 +20,35 @@ type ToolOutput = {
   chartType?: "candle_solid" | "candle_stroke" | "candle_up_stroke" | "candle_down_stroke" | "ohlc" | "area";
   timezone?: string;
   indicators?: Array<{ name: string; params?: number[]; pane?: "main" | "sub" }>;
+  overlays?: Array<{
+    name:
+      | "horizontalRayLine"
+      | "horizontalSegment"
+      | "horizontalStraightLine"
+      | "verticalRayLine"
+      | "verticalSegment"
+      | "verticalStraightLine"
+      | "rayLine"
+      | "segment"
+      | "straightLine"
+      | "priceLine"
+      | "priceChannelLine"
+      | "parallelStraightLine"
+      | "fibonacciLine"
+      | "simpleAnnotation"
+      | "simpleTag";
+    points: Array<{ timestamp?: number; value?: number }>;
+    extendData?: any;
+    styles?: Record<string, any>;
+    paneId?: string;
+    id?: string;
+    groupId?: string;
+    lock?: boolean;
+    visible?: boolean;
+    zLevel?: number;
+    mode?: 'normal' | 'weak_magnet' | 'strong_magnet';
+    modeSensitivity?: number;
+  }>;
 };
 
 export default function Home() {
@@ -27,6 +57,7 @@ export default function Home() {
   const displayMode = useDisplayMode();
   const requestDisplayMode = useRequestDisplayMode();
   const isChatGptApp = useIsChatGptApp();
+  const theme = useTheme();
 
   const symbol = toolOutput?.symbol ? toolOutput.symbol.toUpperCase() : "";
   const interval = toolOutput?.interval ?? "1m";
@@ -34,6 +65,7 @@ export default function Home() {
   const chartType = toolOutput?.chartType ?? "candle_solid";
   const timezone = toolOutput?.timezone;
   const indicators = toolOutput?.indicators ?? [];
+  const overlays = toolOutput?.overlays ?? [];
   
   const hasToolData = !!toolOutput;
 
@@ -44,10 +76,30 @@ export default function Home() {
   const chartRef = useRef<any>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const tickerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [dataReady, setDataReady] = useState(false);
   const baseUrl = useMemo(
     () => (typeof window !== "undefined" ? window.innerBaseUrl : ""),
     []
   );
+
+  const chartHeight = useMemo(() => {
+    if (displayMode !== "fullscreen" && displayMode !== "pip") return 420;
+    if (typeof maxHeight === "number") return Math.max(200, Math.floor(maxHeight * 0.75));
+    return "75vh";
+  }, [displayMode, maxHeight]);
+
+  useEffect(() => {
+    if (!ready || !chartRef.current) return;
+    chartRef.current.resize?.();
+  }, [ready, chartHeight]);
+
+  useEffect(() => {
+    if (!ready || !chartContainerRef.current) return;
+    if (typeof ResizeObserver === "undefined") return;
+    const resizeObserver = new ResizeObserver(() => chartRef.current?.resize?.());
+    resizeObserver.observe(chartContainerRef.current);
+    return () => resizeObserver.disconnect();
+  }, [ready]);
 
   useEffect(() => {
     if (!hasToolData) return;
@@ -88,6 +140,11 @@ export default function Home() {
     };
   }, [chartType, timezone, hasToolData]);
 
+  useEffect(() => {
+    if (!ready || !chartRef.current || !hasToolData) return;
+    chartRef.current.setStyles(theme || 'dark');
+  }, [theme, ready, hasToolData]);
+  
   // Update chart type when it changes
   useEffect(() => {
     if (!ready || !chartRef.current || !hasToolData) return;
@@ -150,6 +207,194 @@ export default function Home() {
     }
   }, [indicators, ready, hasToolData]);
 
+  // Helper to apply overlays after data is loaded
+  const applyOverlays = () => {
+    if (!chartRef.current) return;
+    try {
+      // Clear existing overlays to avoid duplicates
+      chartRef.current.removeOverlay();
+    } catch {}
+
+    if (!overlays || overlays.length === 0) return;
+
+    const dl: any[] = (() => {
+      try { return chartRef.current.getDataList?.() || []; } catch { return []; }
+    })();
+    const last = dl[dl.length - 1];
+    const prev = dl[dl.length - 2];
+    const lastTs: number | undefined = last ? Number(last.timestamp) : undefined;
+
+    overlays.forEach((ov) => {
+      try {
+        const pts = Array.isArray(ov.points) ? ov.points.slice() : [];
+
+        const ensureTwoDataPoints = () => {
+          const a = prev || dl[dl.length - 2];
+          const b = last || dl[dl.length - 1];
+          return [a, b].filter(Boolean);
+        };
+
+        let normalizedPoints: Array<{ timestamp?: number; value?: number }> = [];
+
+        switch (ov.name) {
+          case 'priceLine': {
+            const v = pts[0]?.value ?? last?.close;
+            if (v == null) return;
+            normalizedPoints = [{ value: v, timestamp: pts[0]?.timestamp ?? lastTs }];
+            break;
+          }
+          case 'simpleTag': {
+            const v = pts[0]?.value ?? last?.close;
+            if (v == null) return;
+            if (ov.extendData == null) ov.extendData = '';
+            normalizedPoints = [{ value: v, timestamp: pts[0]?.timestamp ?? lastTs }];
+            break;
+          }
+          case 'simpleAnnotation': {
+            const p0 = pts[0];
+            const t = p0?.timestamp ?? lastTs;
+            const v = p0?.value ?? last?.close;
+            if (t == null || v == null) return;
+            if (ov.extendData == null) ov.extendData = '';
+            normalizedPoints = [{ timestamp: t, value: v }];
+            break;
+          }
+          case 'horizontalStraightLine': {
+            const v = pts[0]?.value ?? last?.close;
+            if (v == null) return;
+            normalizedPoints = [{ value: v, timestamp: pts[0]?.timestamp ?? lastTs }];
+            break;
+          }
+          case 'horizontalRayLine': {
+            const v = (pts[0]?.value ?? last?.close);
+            const t = pts[0]?.timestamp ?? lastTs;
+            if (v == null || t == null) return;
+            normalizedPoints = [{ timestamp: t, value: v }];
+            break;
+          }
+          case 'horizontalSegment': {
+            const baseV = pts[0]?.value ?? last?.close;
+            if (baseV == null) return;
+            const dp = ensureTwoDataPoints();
+            const t1 = pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs);
+            const t2 = pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs);
+            normalizedPoints = [
+              { timestamp: t1, value: baseV },
+              { timestamp: t2, value: pts[1]?.value ?? baseV },
+            ];
+            break;
+          }
+          case 'verticalStraightLine': {
+            const t = pts[0]?.timestamp ?? lastTs;
+            if (t == null) return;
+            normalizedPoints = [{ timestamp: t, value: pts[0]?.value ?? last?.close }];
+            break;
+          }
+          case 'verticalRayLine': {
+            const t = pts[0]?.timestamp ?? lastTs;
+            if (t == null) return;
+            normalizedPoints = [{ timestamp: t, value: pts[0]?.value ?? last?.close }];
+            break;
+          }
+          case 'verticalSegment': {
+            const t = pts[0]?.timestamp ?? pts[1]?.timestamp ?? lastTs;
+            let v1 = pts[0]?.value;
+            let v2 = pts[1]?.value;
+            if (v1 == null || v2 == null) {
+              const hi = last?.high;
+              const lo = last?.low;
+              v1 = v1 ?? hi;
+              v2 = v2 ?? lo;
+            }
+            if (t == null || v1 == null || v2 == null) return;
+            normalizedPoints = [
+              { timestamp: t, value: v1 },
+              { timestamp: t, value: v2 },
+            ];
+            break;
+          }
+          case 'rayLine':
+          case 'segment':
+          case 'straightLine': {
+            const dp = ensureTwoDataPoints();
+            const p1 = {
+              timestamp: pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
+              value: pts[0]?.value ?? (prev?.close ?? last?.close),
+            };
+            const p2 = {
+              timestamp: pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
+              value: pts[1]?.value ?? last?.close,
+            };
+            if (p1.timestamp == null || p1.value == null || p2.timestamp == null || p2.value == null) return;
+            normalizedPoints = [p1, p2];
+            break;
+          }
+          case 'parallelStraightLine':
+          case 'priceChannelLine': {
+            const dp = ensureTwoDataPoints();
+            const p1 = {
+              timestamp: pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
+              value: pts[0]?.value ?? (prev?.close ?? last?.close),
+            };
+            const p2 = {
+              timestamp: pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
+              value: pts[1]?.value ?? last?.close,
+            };
+            let p3v = pts[2]?.value;
+            if (p3v == null) {
+              const dy = Math.abs((p2.value ?? 0) - (p1.value ?? 0)) || (last?.close ? last.close * 0.005 : 1);
+              p3v = (p2.value ?? 0) + dy;
+            }
+            const p3 = {
+              timestamp: pts[2]?.timestamp ?? p2.timestamp,
+              value: p3v,
+            };
+            if (p1.timestamp == null || p2.timestamp == null || p3.timestamp == null || p1.value == null || p2.value == null || p3.value == null) return;
+            normalizedPoints = [p1, p2, p3];
+            break;
+          }
+          case 'fibonacciLine': {
+            const dp = ensureTwoDataPoints();
+            const p1 = {
+              timestamp: pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
+              value: pts[0]?.value ?? (prev?.close ?? last?.close),
+            };
+            const p2 = {
+              timestamp: pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
+              value: pts[1]?.value ?? last?.close,
+            };
+            if (p1.timestamp == null || p1.value == null || p2.timestamp == null || p2.value == null) return;
+            normalizedPoints = [p1, p2];
+            break;
+          }
+          default: {
+            normalizedPoints = pts.map((p) => ({ timestamp: p.timestamp ?? lastTs, value: p.value ?? last?.close }));
+            break;
+          }
+        }
+
+        const overlayValue: any = {
+          name: ov.name,
+          id: ov.id,
+          groupId: ov.groupId,
+          lock: ov.lock,
+          visible: ov.visible,
+          zLevel: ov.zLevel,
+          mode: ov.mode,
+          modeSensitivity: ov.modeSensitivity,
+          points: normalizedPoints,
+          extendData: ov.extendData,
+          styles: ov.styles,
+        };
+
+        chartRef.current.createOverlay(overlayValue, ov.paneId || 'candle_pane');
+      } catch (err) {
+        // Skip problematic overlay silently
+        // console.warn('Failed to create overlay', ov, err)
+      }
+    });
+  };
+
   useEffect(() => {
     // Reconnect stream when symbol or interval changes
     if (!ready || !chartRef.current || !hasToolData) return;
@@ -171,37 +416,44 @@ export default function Home() {
     eventSourceRef.current = es;
 
     let seeded = false;
+    setDataReady(false);
 
     es.addEventListener("init", (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data);
         const data = payload?.data || [];
-        if (chartRef.current && Array.isArray(data)) {
-          chartRef.current.setStyles('dark')
-          chartRef.current.applyNewData(data, true);
-          seeded = true;
+        if (Array.isArray(data) && data.length > 0) {
+          if (chartRef.current) {
+            chartRef.current.applyNewData(data, true);
+            seeded = true;
+            setDataReady(true);
 
-          // Setup loadMore after initial data is loaded
-          if (chartRef.current && typeof chartRef.current.loadMore === "function") {
-            chartRef.current.loadMore((timestamp: number) => {
-              // Fetch historical data
-              const historyUrl = `${baseUrl}/api/kline/history?symbol=${encodeURIComponent(
-                symbol
-              )}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(
-                market
-              )}&limit=100&endTime=${timestamp}`;
-              
-              fetch(historyUrl)
-                .then((res) => res.json())
-                .then((result) => {
-                  if (chartRef.current && result?.data && Array.isArray(result.data)) {
-                    chartRef.current.applyMoreData(result.data, true);
-                  }
-                })
-                .catch(() => {
-                  // Silently fail
-                });
-            });
+            // Setup loadMore after initial data is loaded
+            if (chartRef.current && typeof chartRef.current.loadMore === "function") {
+              chartRef.current.loadMore((timestamp: number) => {
+                // Fetch historical data
+                const historyUrl = `${baseUrl}/api/kline/history?symbol=${encodeURIComponent(
+                  symbol
+                )}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(
+                  market
+                )}&limit=100&endTime=${timestamp}`;
+                
+                fetch(historyUrl)
+                  .then((res) => res.json())
+                  .then((result) => {
+                    if (chartRef.current && result?.data && Array.isArray(result.data)) {
+                      chartRef.current.applyMoreData(result.data, true);
+                    }
+                  })
+                  .catch(() => {
+                    // Silently fail
+                  });
+              });
+            }
+          } else {
+            // Chart not ready yet, but data arrived, mark as ready
+            // Data will be applied when chart is ready
+            setDataReady(true);
           }
         }
       } catch {}
@@ -237,6 +489,12 @@ export default function Home() {
       eventSourceRef.current = null;
     };
   }, [symbol, interval, market, ready, baseUrl, hasToolData]);
+
+  // Apply overlays once chart and data are ready, or when overlays prop changes
+  useEffect(() => {
+    if (!ready || !dataReady || !hasToolData) return;
+    applyOverlays();
+  }, [ready, dataReady, hasToolData, overlays]);
 
   // Fetch 24hr ticker data
   useEffect(() => {
@@ -277,9 +535,14 @@ export default function Home() {
           height: displayMode === "fullscreen" ? maxHeight : undefined,
         }}
       >
-        <div className="w-full rounded-md overflow-hidden" style={{ height: displayMode === "fullscreen" ? (maxHeight ? Math.max(200, maxHeight - 140) : 500) : 420 }}>
-          <Skeleton width="100%" height="100%" />
-        </div>
+        <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
+          <div className="w-full mb-3 h-8">
+            <Skeleton width="200px" height="100%" />
+          </div>
+          <div className="w-full rounded-lg overflow-hidden" style={{ height: chartHeight }}>
+            <Skeleton width="100%" height="100%" />
+          </div>
+        </main>
       </div>
     );
   }
@@ -316,14 +579,17 @@ export default function Home() {
       )}
       <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
 
-        {currentPrice > 0 && (
-          <div className="w-full mb-3">
-            <PriceWithDiff value={currentPrice} diff={priceChange24h} />
-          </div>
-        )}
+        <div className="w-full mb-3">
+          <PriceWithDiff value={currentPrice || 0} diff={priceChange24h || 0} />
+        </div>
 
-        <div className="w-full border border-slate-200 dark:border-slate-800 rounded-md overflow-hidden" style={{ height: displayMode === "fullscreen" ? (maxHeight ? Math.max(200, maxHeight - 140) : 500) : 420 }}>
+        <div className="w-full border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden relative" style={{ height: chartHeight, width: `calc(100vw - 32px)` }}>
           <div ref={chartContainerRef} className="w-full h-full" />
+          {!dataReady && (
+            <div className="absolute inset-0 z-10">
+              <Skeleton width="100%" height="100%" />
+            </div>
+          )}
         </div>
       </main>
     </div>

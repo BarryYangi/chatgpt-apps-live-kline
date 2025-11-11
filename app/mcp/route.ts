@@ -121,6 +121,62 @@ const handler = createMcpHandler(async (server) => {
           .string()
           .optional()
           .describe("Timezone for the chart (e.g., Asia/Shanghai, Europe/Berlin, America/Chicago, UTC). Default is browser timezone."),
+        overlays: z
+          .array(
+            z.object({
+              name: z.enum([
+                "horizontalRayLine",
+                "horizontalSegment",
+                "horizontalStraightLine",
+                "verticalRayLine",
+                "verticalSegment",
+                "verticalStraightLine",
+                "rayLine",
+                "segment",
+                "straightLine",
+                "priceLine",
+                "priceChannelLine",
+                "parallelStraightLine",
+                "fibonacciLine",
+                "simpleAnnotation",
+                "simpleTag",
+              ]).describe(
+                "Built-in overlay type. Use built-ins only; custom overlays are not supported here."
+              ),
+              points: z
+                .array(
+                  z.object({
+                    timestamp: z.number().optional().describe("Unix ms timestamp of the candle"),
+                    value: z.number().optional().describe("Price value at y-axis"),
+                  })
+                )
+                .min(1)
+                .describe(
+                  "Overlay points. Provide timestamp/value pairs where required by the overlay: " +
+                    "- horizontal* accept value only; - vertical* accept timestamp only; " +
+                    "- lines/channels require timestamp+value for each point; - simpleTag can be value only; - simpleAnnotation needs timestamp+value."
+                ),
+              extendData: z.string().optional().describe("Optional extendData passed to klinecharts overlay"),
+              styles: z.record(z.any()).optional().describe("Optional styles object for overlay"),
+              paneId: z.string().optional().describe("Target pane id. Use 'candle_pane' for main chart."),
+              id: z.string().optional(),
+              groupId: z.string().optional(),
+              lock: z.boolean().optional(),
+              visible: z.boolean().optional(),
+              zLevel: z.number().optional(),
+              mode: z.enum(['normal','weak_magnet','strong_magnet']).optional(),
+              modeSensitivity: z.number().optional(),
+            })
+          )
+          .optional()
+          .describe(
+            "Define overlays to draw automatically AFTER initial chart data is loaded. Points are applied directly without interactive selection. Required points by type: " +
+            "priceLine: 1(value); simpleTag: 1(value) [extendData optional]; simpleAnnotation: 1(timestamp+value) [extendData optional]; " +
+            "horizontalStraightLine: 1(value); horizontalRayLine: 1(value) [timestamp optional]; horizontalSegment: 2(timestamp, value same y); " +
+            "verticalStraightLine: 1(timestamp); verticalRayLine: 1(timestamp); verticalSegment: 2(value) at same timestamp; " +
+            "rayLine/segment/straightLine: 2(timestamp+value each); fibonacciLine: 2(timestamp+value each); " +
+            "parallelStraightLine/priceChannelLine: 3(timestamp+value for first two to set base; third value sets parallel distance)."
+          ),
         indicators: z
           .array(
             z.object({
@@ -189,7 +245,7 @@ const handler = createMcpHandler(async (server) => {
       },
       _meta: widgetMeta(liveKlineWidget),
     },
-    async ({ symbol, interval = "1m", market = "futures", chartType = "candle_solid", timezone, indicators = [] }) => {
+    async ({ symbol, interval = "1m", market = "futures", chartType = "candle_solid", timezone, indicators = [], overlays = [] }) => {
       const sym = String(symbol || "").toUpperCase();
       const iv = String(interval);
       
@@ -220,6 +276,7 @@ const handler = createMcpHandler(async (server) => {
           chartType,
           timezone: timezone || undefined,
           indicators: indicators || [],
+          overlays: overlays || [],
           klines: klines.slice(-150), // Ensure max 150
           timestamp: new Date().toISOString(),
         },

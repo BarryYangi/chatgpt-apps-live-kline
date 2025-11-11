@@ -35,8 +35,8 @@ export function useOpenAIGlobal<K extends keyof OpenAIGlobals>(
         if (value === undefined) {
           return;
         }
-
-        onChange();
+        // onChange();
+        setTimeout(onChange, 0);
       };
 
       window.addEventListener(SET_GLOBALS_EVENT_TYPE, handleSetGlobal, {

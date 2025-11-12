@@ -11,6 +11,7 @@ import {
 } from "./hooks";
 import PriceWithDiff from "./components/PriceWithDiff";
 import Skeleton from "./components/Skeleton";
+import { Expand, Pin } from "lucide-react";
 
 type ToolOutput = {
   // Live kline tool payload
@@ -538,8 +539,11 @@ export default function Home() {
         }}
       >
         <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
-          <div className="w-full mb-3 h-8">
-            <Skeleton width="200px" height="100%" />
+          <div className="w-full mb-3">
+            <div className="flex-row">
+              <Skeleton width="90px" height="20px" className="mb-2" />
+              <Skeleton width="180px" height="32px" />
+            </div>
           </div>
           <div className="w-full rounded-lg overflow-hidden" style={{ height: chartHeight }}>
             <Skeleton width="100%" height="100%" />
@@ -557,31 +561,32 @@ export default function Home() {
         height: displayMode === "fullscreen" ? maxHeight : undefined,
       }}
     >
-      {displayMode !== "fullscreen" && (
+      <div className="fixed top-4 right-4 z-50 flex gap-2 items-center">
+      {displayMode !== "pip" && (
         <button
-          aria-label="Enter fullscreen"
-          className="fixed top-4 right-4 z-50 rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-          onClick={() => requestDisplayMode("fullscreen")}
+          aria-label="Enter pip"
+          className="rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          onClick={() => requestDisplayMode("pip")}
         >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
-            />
-          </svg>
+          <Pin className="w-5 h-5" />
         </button>
-      )}
+        )}
+        {displayMode !== "fullscreen" && (
+          <button
+            aria-label="Enter fullscreen"
+            className="rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            onClick={() => requestDisplayMode("fullscreen")}
+          >
+            <Expand className="w-5 h-5" />
+          </button>
+        )}
+      </div>
       <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
 
         <div className="w-full mb-3">
+          <span className="text-slate-500 dark:text-slate-400 font-medium">
+            {symbol}
+          </span>
           <PriceWithDiff value={currentPrice || 0} diff={priceChange24h || 0} />
         </div>
 

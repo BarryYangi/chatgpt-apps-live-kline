@@ -12,15 +12,26 @@ import {
 import PriceWithDiff from "./components/PriceWithDiff";
 import Skeleton from "./components/Skeleton";
 import { Expand, Pin } from "lucide-react";
+import clsx from "clsx";
 
 type ToolOutput = {
   // Live kline tool payload
   symbol?: string;
   interval?: string;
   market?: "spot" | "futures";
-  chartType?: "candle_solid" | "candle_stroke" | "candle_up_stroke" | "candle_down_stroke" | "ohlc" | "area";
+  chartType?:
+    | "candle_solid"
+    | "candle_stroke"
+    | "candle_up_stroke"
+    | "candle_down_stroke"
+    | "ohlc"
+    | "area";
   timezone?: string;
-  indicators?: Array<{ name: string; params?: number[]; pane?: "main" | "sub" }>;
+  indicators?: Array<{
+    name: string;
+    params?: number[];
+    pane?: "main" | "sub";
+  }>;
   overlays?: Array<{
     name:
       | "horizontalRayLine"
@@ -47,7 +58,7 @@ type ToolOutput = {
     lock?: boolean;
     visible?: boolean;
     zLevel?: number;
-    mode?: 'normal' | 'weak_magnet' | 'strong_magnet';
+    mode?: "normal" | "weak_magnet" | "strong_magnet";
     modeSensitivity?: number;
   }>;
 };
@@ -67,7 +78,7 @@ export default function Home() {
   const timezone = toolOutput?.timezone;
   const indicators = toolOutput?.indicators ?? [];
   const overlays = toolOutput?.overlays ?? [];
-  
+
   const hasToolData = !!toolOutput;
 
   const [ready, setReady] = useState(false);
@@ -85,7 +96,8 @@ export default function Home() {
 
   const chartHeight = useMemo(() => {
     if (displayMode !== "fullscreen" && displayMode !== "pip") return 420;
-    if (typeof maxHeight === "number") return Math.max(200, Math.floor(maxHeight * 0.75));
+    if (typeof maxHeight === "number")
+      return Math.max(200, Math.floor(maxHeight * 0.75));
     return "75vh";
   }, [displayMode, maxHeight]);
 
@@ -97,7 +109,9 @@ export default function Home() {
   useEffect(() => {
     if (!ready || !chartContainerRef.current) return;
     if (typeof ResizeObserver === "undefined") return;
-    const resizeObserver = new ResizeObserver(() => chartRef.current?.resize?.());
+    const resizeObserver = new ResizeObserver(() =>
+      chartRef.current?.resize?.()
+    );
     resizeObserver.observe(chartContainerRef.current);
     return () => resizeObserver.disconnect();
   }, [ready]);
@@ -117,11 +131,11 @@ export default function Home() {
         chartRef.current = null;
       }
       chartRef.current = init(chartContainerRef.current, {
-        styles: { 
-          candle: { 
+        styles: {
+          candle: {
             priceMark: { show: true },
-            type: chartType as any
-          } 
+            type: chartType as any,
+          },
         },
       });
       if (timezone && chartRef.current) {
@@ -143,16 +157,16 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready || !chartRef.current || !hasToolData) return;
-    chartRef.current.setStyles(theme || 'dark');
+    chartRef.current.setStyles(theme || "dark");
   }, [theme, ready, hasToolData]);
-  
+
   // Update chart type when it changes
   useEffect(() => {
     if (!ready || !chartRef.current || !hasToolData) return;
     chartRef.current.setStyles({
       candle: {
-        type: chartType as any
-      }
+        type: chartType as any,
+      },
     });
   }, [chartType, ready, hasToolData]);
 
@@ -167,7 +181,7 @@ export default function Home() {
   // Update indicators when they change
   useEffect(() => {
     if (!ready || !chartRef.current || !hasToolData) return;
-    
+
     // Remove all existing indicators first
     try {
       const allIndicators = chartRef.current.getIndicators();
@@ -181,7 +195,7 @@ export default function Home() {
         });
       }
     } catch {}
-    
+
     // Add new indicators with parameters
     if (indicators.length > 0) {
       indicators.forEach((indicator) => {
@@ -191,20 +205,24 @@ export default function Home() {
           const indicatorConfig: any = {
             name: indicator.name,
           };
-          if (indicator.params && Array.isArray(indicator.params) && indicator.params.length > 0) {
+          if (
+            indicator.params &&
+            Array.isArray(indicator.params) &&
+            indicator.params.length > 0
+          ) {
             indicatorConfig.calcParams = indicator.params;
           }
-          
+
           // Second parameter: whether to replace existing (false = add new)
           // Third parameter: pane options - use fixed pane id to prevent duplicate panes
-          const paneOptions = isMainPane 
-            ? { id: 'candle_pane' } 
+          const paneOptions = isMainPane
+            ? { id: "candle_pane" }
             : { id: `indicator_${indicator.name}_pane` };
-          
+
           chartRef.current.createIndicator(indicatorConfig, true, paneOptions);
         } catch (err) {
           // Silently fail if indicator is invalid
-          console.warn('Failed to create indicator:', indicator.name, err);
+          console.warn("Failed to create indicator:", indicator.name, err);
         }
       });
     }
@@ -221,11 +239,17 @@ export default function Home() {
     if (!overlays || overlays.length === 0) return;
 
     const dl: any[] = (() => {
-      try { return chartRef.current.getDataList?.() || []; } catch { return []; }
+      try {
+        return chartRef.current.getDataList?.() || [];
+      } catch {
+        return [];
+      }
     })();
     const last = dl[dl.length - 1];
     const prev = dl[dl.length - 2];
-    const lastTs: number | undefined = last ? Number(last.timestamp) : undefined;
+    const lastTs: number | undefined = last
+      ? Number(last.timestamp)
+      : undefined;
 
     overlays.forEach((ov) => {
       try {
@@ -237,45 +261,52 @@ export default function Home() {
           return [a, b].filter(Boolean);
         };
 
-        let normalizedPoints: Array<{ timestamp?: number; value?: number }> = [];
+        let normalizedPoints: Array<{ timestamp?: number; value?: number }> =
+          [];
 
         switch (ov.name) {
-          case 'priceLine': {
+          case "priceLine": {
             const v = pts[0]?.value ?? last?.close;
             if (v == null) return;
-            normalizedPoints = [{ value: v, timestamp: pts[0]?.timestamp ?? lastTs }];
+            normalizedPoints = [
+              { value: v, timestamp: pts[0]?.timestamp ?? lastTs },
+            ];
             break;
           }
-          case 'simpleTag': {
+          case "simpleTag": {
             const v = pts[0]?.value ?? last?.close;
             if (v == null) return;
-            if (ov.extendData == null) ov.extendData = '';
-            normalizedPoints = [{ value: v, timestamp: pts[0]?.timestamp ?? lastTs }];
+            if (ov.extendData == null) ov.extendData = "";
+            normalizedPoints = [
+              { value: v, timestamp: pts[0]?.timestamp ?? lastTs },
+            ];
             break;
           }
-          case 'simpleAnnotation': {
+          case "simpleAnnotation": {
             const p0 = pts[0];
             const t = p0?.timestamp ?? lastTs;
             const v = p0?.value ?? last?.close;
             if (t == null || v == null) return;
-            if (ov.extendData == null) ov.extendData = '';
+            if (ov.extendData == null) ov.extendData = "";
             normalizedPoints = [{ timestamp: t, value: v }];
             break;
           }
-          case 'horizontalStraightLine': {
+          case "horizontalStraightLine": {
             const v = pts[0]?.value ?? last?.close;
             if (v == null) return;
-            normalizedPoints = [{ value: v, timestamp: pts[0]?.timestamp ?? lastTs }];
+            normalizedPoints = [
+              { value: v, timestamp: pts[0]?.timestamp ?? lastTs },
+            ];
             break;
           }
-          case 'horizontalRayLine': {
-            const v = (pts[0]?.value ?? last?.close);
+          case "horizontalRayLine": {
+            const v = pts[0]?.value ?? last?.close;
             const t = pts[0]?.timestamp ?? lastTs;
             if (v == null || t == null) return;
             normalizedPoints = [{ timestamp: t, value: v }];
             break;
           }
-          case 'horizontalSegment': {
+          case "horizontalSegment": {
             const baseV = pts[0]?.value ?? last?.close;
             if (baseV == null) return;
             const dp = ensureTwoDataPoints();
@@ -287,19 +318,23 @@ export default function Home() {
             ];
             break;
           }
-          case 'verticalStraightLine': {
+          case "verticalStraightLine": {
             const t = pts[0]?.timestamp ?? lastTs;
             if (t == null) return;
-            normalizedPoints = [{ timestamp: t, value: pts[0]?.value ?? last?.close }];
+            normalizedPoints = [
+              { timestamp: t, value: pts[0]?.value ?? last?.close },
+            ];
             break;
           }
-          case 'verticalRayLine': {
+          case "verticalRayLine": {
             const t = pts[0]?.timestamp ?? lastTs;
             if (t == null) return;
-            normalizedPoints = [{ timestamp: t, value: pts[0]?.value ?? last?.close }];
+            normalizedPoints = [
+              { timestamp: t, value: pts[0]?.value ?? last?.close },
+            ];
             break;
           }
-          case 'verticalSegment': {
+          case "verticalSegment": {
             const t = pts[0]?.timestamp ?? pts[1]?.timestamp ?? lastTs;
             let v1 = pts[0]?.value;
             let v2 = pts[1]?.value;
@@ -316,62 +351,93 @@ export default function Home() {
             ];
             break;
           }
-          case 'rayLine':
-          case 'segment':
-          case 'straightLine': {
+          case "rayLine":
+          case "segment":
+          case "straightLine": {
             const dp = ensureTwoDataPoints();
             const p1 = {
-              timestamp: pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
-              value: pts[0]?.value ?? (prev?.close ?? last?.close),
+              timestamp:
+                pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
+              value: pts[0]?.value ?? prev?.close ?? last?.close,
             };
             const p2 = {
-              timestamp: pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
+              timestamp:
+                pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
               value: pts[1]?.value ?? last?.close,
             };
-            if (p1.timestamp == null || p1.value == null || p2.timestamp == null || p2.value == null) return;
+            if (
+              p1.timestamp == null ||
+              p1.value == null ||
+              p2.timestamp == null ||
+              p2.value == null
+            )
+              return;
             normalizedPoints = [p1, p2];
             break;
           }
-          case 'parallelStraightLine':
-          case 'priceChannelLine': {
+          case "parallelStraightLine":
+          case "priceChannelLine": {
             const dp = ensureTwoDataPoints();
             const p1 = {
-              timestamp: pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
-              value: pts[0]?.value ?? (prev?.close ?? last?.close),
+              timestamp:
+                pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
+              value: pts[0]?.value ?? prev?.close ?? last?.close,
             };
             const p2 = {
-              timestamp: pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
+              timestamp:
+                pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
               value: pts[1]?.value ?? last?.close,
             };
             let p3v = pts[2]?.value;
             if (p3v == null) {
-              const dy = Math.abs((p2.value ?? 0) - (p1.value ?? 0)) || (last?.close ? last.close * 0.005 : 1);
+              const dy =
+                Math.abs((p2.value ?? 0) - (p1.value ?? 0)) ||
+                (last?.close ? last.close * 0.005 : 1);
               p3v = (p2.value ?? 0) + dy;
             }
             const p3 = {
               timestamp: pts[2]?.timestamp ?? p2.timestamp,
               value: p3v,
             };
-            if (p1.timestamp == null || p2.timestamp == null || p3.timestamp == null || p1.value == null || p2.value == null || p3.value == null) return;
+            if (
+              p1.timestamp == null ||
+              p2.timestamp == null ||
+              p3.timestamp == null ||
+              p1.value == null ||
+              p2.value == null ||
+              p3.value == null
+            )
+              return;
             normalizedPoints = [p1, p2, p3];
             break;
           }
-          case 'fibonacciLine': {
+          case "fibonacciLine": {
             const dp = ensureTwoDataPoints();
             const p1 = {
-              timestamp: pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
-              value: pts[0]?.value ?? (prev?.close ?? last?.close),
+              timestamp:
+                pts[0]?.timestamp ?? Number(dp[0]?.timestamp ?? lastTs),
+              value: pts[0]?.value ?? prev?.close ?? last?.close,
             };
             const p2 = {
-              timestamp: pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
+              timestamp:
+                pts[1]?.timestamp ?? Number(dp[1]?.timestamp ?? lastTs),
               value: pts[1]?.value ?? last?.close,
             };
-            if (p1.timestamp == null || p1.value == null || p2.timestamp == null || p2.value == null) return;
+            if (
+              p1.timestamp == null ||
+              p1.value == null ||
+              p2.timestamp == null ||
+              p2.value == null
+            )
+              return;
             normalizedPoints = [p1, p2];
             break;
           }
           default: {
-            normalizedPoints = pts.map((p) => ({ timestamp: p.timestamp ?? lastTs, value: p.value ?? last?.close }));
+            normalizedPoints = pts.map((p) => ({
+              timestamp: p.timestamp ?? lastTs,
+              value: p.value ?? last?.close,
+            }));
             break;
           }
         }
@@ -390,7 +456,10 @@ export default function Home() {
           styles: ov.styles,
         };
 
-        chartRef.current.createOverlay(overlayValue, ov.paneId || 'candle_pane');
+        chartRef.current.createOverlay(
+          overlayValue,
+          ov.paneId || "candle_pane"
+        );
       } catch (err) {
         // Skip problematic overlay silently
         // console.warn('Failed to create overlay', ov, err)
@@ -432,19 +501,28 @@ export default function Home() {
             setDataReady(true);
 
             // Setup loadMore after initial data is loaded
-            if (chartRef.current && typeof chartRef.current.loadMore === "function") {
+            if (
+              chartRef.current &&
+              typeof chartRef.current.loadMore === "function"
+            ) {
               chartRef.current.loadMore((timestamp: number) => {
                 // Fetch historical data
                 const historyUrl = `${baseUrl}/api/kline/history?symbol=${encodeURIComponent(
                   symbol
-                )}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(
+                )}&interval=${encodeURIComponent(
+                  interval
+                )}&market=${encodeURIComponent(
                   market
                 )}&limit=100&endTime=${timestamp}`;
-                
+
                 fetch(historyUrl)
                   .then((res) => res.json())
                   .then((result) => {
-                    if (chartRef.current && result?.data && Array.isArray(result.data)) {
+                    if (
+                      chartRef.current &&
+                      result?.data &&
+                      Array.isArray(result.data)
+                    ) {
                       chartRef.current.applyMoreData(result.data, true);
                     }
                   })
@@ -545,7 +623,10 @@ export default function Home() {
               <Skeleton width="180px" height="32px" />
             </div>
           </div>
-          <div className="w-full rounded-lg overflow-hidden" style={{ height: chartHeight }}>
+          <div
+            className="w-full rounded-lg overflow-hidden"
+            style={{ height: chartHeight }}
+          >
             <Skeleton width="100%" height="100%" />
           </div>
         </main>
@@ -562,14 +643,14 @@ export default function Home() {
       }}
     >
       <div className="fixed top-4 right-4 z-50 flex gap-2 items-center">
-      {displayMode !== "pip" && (
-        <button
-          aria-label="Enter pip"
-          className="rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-          onClick={() => requestDisplayMode("pip")}
-        >
-          <Pin className="w-5 h-5" />
-        </button>
+        {displayMode !== "pip" && (
+          <button
+            aria-label="Enter pip"
+            className="rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            onClick={() => requestDisplayMode("pip")}
+          >
+            <Pin className="w-5 h-5" />
+          </button>
         )}
         {displayMode !== "fullscreen" && (
           <button
@@ -582,15 +663,18 @@ export default function Home() {
         )}
       </div>
       <main className="flex flex-col row-start-2 items-center sm:items-start w-full">
-
         <div className="w-full mb-3">
           <span className="text-slate-500 dark:text-slate-400 font-medium">
             {symbol}
           </span>
           <PriceWithDiff value={currentPrice || 0} diff={priceChange24h || 0} />
         </div>
-
-        <div className="w-full border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden relative" style={{ height: chartHeight, width: `calc(100vw - 32px)` }}>
+        <div
+          className={clsx("w-full rounded-lg overflow-hidden relative", {
+            "border border-slate-200 dark:border-slate-800": dataReady,
+          })}
+          style={{ height: chartHeight, width: `calc(100vw - 32px)` }}
+        >
           <div ref={chartContainerRef} className="w-full h-full" />
           {!dataReady && (
             <div className="absolute inset-0 z-10">

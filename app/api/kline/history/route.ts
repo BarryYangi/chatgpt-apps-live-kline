@@ -3,6 +3,8 @@ import type { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const STOCK_API_BASE = process.env.STOCK_API_BASE!;
+
 const INTERVALS = new Set([
   "1m",
   "3m",
@@ -26,7 +28,7 @@ export async function GET(req: NextRequest) {
   const symbol = (searchParams.get("symbol") || "").toUpperCase();
   const interval = (searchParams.get("interval") || "1m").toString();
   const limit = Math.min(Math.max(Number(searchParams.get("limit") || 100), 50), 1000);
-  const market = ((searchParams.get("market") || "futures") as string).toLowerCase();
+  const market = (searchParams.get("market") || "futures") as string;
   const endTime = searchParams.get("endTime");
 
   if (!symbol) {
@@ -34,6 +36,54 @@ export async function GET(req: NextRequest) {
   }
   if (!INTERVALS.has(interval)) {
     return new Response("Invalid interval", { status: 400 });
+  }
+
+  // 检测是否是股票市场
+  const isStock = market.toLowerCase() !== "spot" && market.toLowerCase() !== "futures";
+
+  if (isStock) {
+    try {
+      const params = new URLSearchParams({
+        symbol,
+        interval,
+        market,
+        limit: limit.toString(),
+      });
+
+      if (endTime) {
+        params.append("endTime", endTime);
+      }
+
+      const url = `${STOCK_API_BASE}/api/kline/history?${params}`;
+      
+      const response = await fetch(url, {
+        headers: {
+          "X-APP-NAME": "global",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Stock API error: ${response.status}`);
+      }
+
+      const klines = await response.json();
+      
+      const data = (klines || []).map((k: any) => ({
+        timestamp: Number(k.timestamp),
+        open: Number(k.open),
+        high: Number(k.high),
+        low: Number(k.low),
+        close: Number(k.close),
+        volume: Number(k.volume),
+      }));
+
+      return Response.json({ data });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: String(err) }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
   }
 
   try {

@@ -22,18 +22,61 @@ const INTERVALS = new Set([
   "1M",
 ]);
 
+const STOCK_API_BASE = process.env.STOCK_API_BASE!;
+
+// 代理股票 API 的 SSE 流
+async function proxyStockSSE(symbol: string, interval: string, limit: number): Promise<Response> {
+  const url = `${STOCK_API_BASE}/api/kline?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`;
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "text/event-stream",
+      },
+    });
+
+    if (!response.ok) {
+      return new Response(`Stock API error: ${response.status}`, { status: response.status });
+    }
+
+    if (!response.body) {
+      return new Response("No response body", { status: 500 });
+    }
+
+    // 直接流式传输股票 API 的响应
+    return new Response(response.body, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  } catch (err) {
+    return new Response(`Failed to connect to stock API: ${String(err)}`, { status: 500 });
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const symbol = (searchParams.get("symbol") || "").toUpperCase();
   const interval = (searchParams.get("interval") || "1m").toString();
   const limit = Math.min(Math.max(Number(searchParams.get("limit") || 400), 50), 1000);
-  const market = ((searchParams.get("market") || "futures") as string).toLowerCase();
+  const market = (searchParams.get("market") || "futures") as string;
 
   if (!symbol) {
     return new Response("Missing symbol", { status: 400 });
   }
   if (!INTERVALS.has(interval)) {
     return new Response("Invalid interval", { status: 400 });
+  }
+
+  // 检测是否是股票市场 (非 spot/futures)
+  const isStock = market.toLowerCase() !== "spot" && market.toLowerCase() !== "futures";
+
+  // 如果是股票市场,直接代理股票 API 的 SSE 流
+  if (isStock) {
+    return proxyStockSSE(symbol, interval, limit);
   }
 
   const encoder = new TextEncoder();

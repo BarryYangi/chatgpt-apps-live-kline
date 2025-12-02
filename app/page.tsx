@@ -18,7 +18,7 @@ type ToolOutput = {
   // Live kline tool payload
   symbol?: string;
   interval?: string;
-  market?: "spot" | "futures";
+  market?: string; // "spot" | "futures" for crypto, or stock exchange code like "SH", "SZ"
   chartType?:
     | "candle_solid"
     | "candle_stroke"
@@ -507,13 +507,14 @@ export default function Home() {
             ) {
               chartRef.current.loadMore((timestamp: number) => {
                 // Fetch historical data
+                // Subtract 1ms from timestamp to avoid duplicate data
                 const historyUrl = `${baseUrl}/api/kline/history?symbol=${encodeURIComponent(
                   symbol
                 )}&interval=${encodeURIComponent(
                   interval
                 )}&market=${encodeURIComponent(
                   market
-                )}&limit=100&endTime=${timestamp}`;
+                )}&limit=100&endTime=${timestamp - 1}`;
 
                 fetch(historyUrl)
                   .then((res) => res.json())

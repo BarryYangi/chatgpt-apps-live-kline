@@ -23,7 +23,7 @@ function widgetMeta(widget: ContentWidget) {
     "openai/outputTemplate": widget.templateUri,
     "openai/toolInvocation/invoking": widget.invoking,
     "openai/toolInvocation/invoked": widget.invoked,
-    "openai/widgetAccessible": false,
+    "openai/widgetAccessible": true,
     "openai/resultCanProduceWidget": true,
   } as const;
 }
@@ -38,7 +38,7 @@ const handler = createMcpHandler(async (server) => {
     invoking: "Loading chart...",
     invoked: "Chart loaded",
     html: html,
-    description: "Displays live candlestick chart from Binance",
+    description: "Displays live candlestick chart from Binance (crypto) or stock market",
     widgetDomain: "https://nextjs.org/docs",
   };
 
@@ -76,12 +76,12 @@ const handler = createMcpHandler(async (server) => {
     {
       title: "Live Kline",
       description:
-        "Render a live candlestick chart from Binance via websocket. Provide a symbol like BTCUSDT and optional interval (default 1m).",
+        "Render a live candlestick chart from Binance (crypto) or stock market via real-time streaming. Supports crypto (spot/futures) and stocks. For crypto, provide symbol like BTCUSDT. For stocks, provide symbol with exchange suffix like 600519.SH. Default interval for stocks is 1d, for crypto is 1m. Stock market with 1m interval will automatically use area chart.",
       inputSchema: {
         symbol: z
           .string()
           .min(3)
-          .describe("Binance trading pair symbol, e.g., BTCUSDT, ETHUSDT"),
+          .describe("Trading symbol. For crypto: BTCUSDT, ETHUSDT. For stocks: 600519.SH (Shanghai), 000001.SZ (Shenzhen)"),
         interval: z
           .enum([
             "1m",
@@ -101,11 +101,10 @@ const handler = createMcpHandler(async (server) => {
             "1M",
           ])
           .optional()
-          .describe("Kline interval (default 1m)"),
+          .describe("Kline interval. Default: 1d for stocks, 1m for crypto."),
         market: z
-          .enum(["spot", "futures"]) 
-          .optional()
-          .describe("Market type: spot or futures (default futures)"),
+          .string()
+          .describe("Market type (required): 'spot' (crypto spot), 'futures' (crypto futures), or stock exchange code like 'SH' (Shanghai), 'SZ' (Shenzhen). Any value other than 'spot' or 'futures' will be treated as stock market."),
         chartType: z
           .enum([
             "candle_solid",
@@ -243,11 +242,16 @@ const handler = createMcpHandler(async (server) => {
             "Supported indicators: MA, EMA, SMA, BOLL, SAR, BBI, MACD, KDJ, RSI, WR, CCI, DMI, TRIX, OBV, VOL, VR, CR, PSY, BRAR, DMA, MTM, EMV, AO, PVT, BIAS, ROC, AVP"
           ),
       },
+      annotations: { readOnlyHint: true },
       _meta: widgetMeta(liveKlineWidget),
     },
-    async ({ symbol, interval = "1m", market = "futures", chartType = "candle_solid", timezone, indicators = [], overlays = [] }) => {
+    async ({ symbol, interval, market, chartType = "candle_solid", timezone, indicators = [], overlays = [] }) => {
       const sym = String(symbol || "").toUpperCase();
-      const iv = String(interval);
+      // Default interval: 1d for stocks, 1m for crypto
+      const isStock = market !== "spot" && market !== "futures";
+      const iv = String(interval || (isStock ? "1d" : "1m"));
+      // For stocks with 1m interval, use area chart
+      const ct = (isStock && iv === "1m") ? "area" : (chartType || "candle_solid");
       
       // Fetch latest 150 klines for the model
       let klines: any[] = [];
@@ -266,14 +270,14 @@ const handler = createMcpHandler(async (server) => {
         content: [
           {
             type: "text",
-            text: `Streaming ${sym} (${iv}) on ${market} with ${chartType} chart type. Latest ${klines.length} klines loaded.`,
+            text: `Streaming ${sym} (${iv}) on ${market} with ${ct} chart type. Latest ${klines.length} klines loaded.`,
           },
         ],
         structuredContent: {
           symbol: sym,
           interval: iv,
           market,
-          chartType,
+          chartType: ct,
           timezone: timezone || undefined,
           indicators: indicators || [],
           overlays: overlays || [],

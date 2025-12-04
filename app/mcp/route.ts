@@ -260,7 +260,10 @@ const handler = createMcpHandler(async (server) => {
         const res = await fetch(historyUrl);
         if (res.ok) {
           const data = await res.json();
-          klines = data.data || [];
+          klines = (data.data || []).map((k: any) => ({
+            ...k,
+            timestamp: new Date(k.timestamp).toISOString(),
+          }));
         }
       } catch (err) {
         // Silently fail, klines will be empty

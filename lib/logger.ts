@@ -69,32 +69,48 @@ if (typeof process !== "undefined" && typeof window === "undefined") {
   };
 
   console.log = (...args: unknown[]) => {
-    if (process.stdout) {
-      process.stdout.write(formatLog("info", args) + "\n");
+    if (process.stdout && typeof process.stdout.write === "function") {
+      try {
+        process.stdout.write(formatLog("info", args) + "\n");
+      } catch {
+        originalLog(...args);
+      }
     } else {
       originalLog(...args);
     }
   };
 
   console.warn = (...args: unknown[]) => {
-    if (process.stdout) {
-      process.stdout.write(formatLog("warn", args) + "\n");
+    if (process.stdout && typeof process.stdout.write === "function") {
+      try {
+        process.stdout.write(formatLog("warn", args) + "\n");
+      } catch {
+        originalWarn(...args);
+      }
     } else {
       originalWarn(...args);
     }
   };
 
   console.error = (...args: unknown[]) => {
-    if (process.stderr) {
-      process.stderr.write(formatLog("error", args) + "\n");
+    if (process.stderr && typeof process.stderr.write === "function") {
+      try {
+        process.stderr.write(formatLog("error", args) + "\n");
+      } catch {
+        originalError(...args);
+      }
     } else {
       originalError(...args);
     }
   };
 
   console.debug = (...args: unknown[]) => {
-    if (process.stdout) {
-      process.stdout.write(formatLog("debug", args) + "\n");
+    if (process.stdout && typeof process.stdout.write === "function") {
+      try {
+        process.stdout.write(formatLog("debug", args) + "\n");
+      } catch {
+        originalDebug(...args);
+      }
     } else {
       originalDebug(...args);
     }

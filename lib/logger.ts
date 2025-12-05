@@ -68,51 +68,67 @@ if (typeof process !== "undefined" && typeof window === "undefined") {
     return JSON.stringify(entry);
   };
 
+  const hasStdout = () => {
+    try {
+      return process && "stdout" in process && process.stdout && typeof process.stdout.write === "function";
+    } catch {
+      return false;
+    }
+  };
+
+  const hasStderr = () => {
+    try {
+      return process && "stderr" in process && process.stderr && typeof process.stderr.write === "function";
+    } catch {
+      return false;
+    }
+  };
+
   console.log = (...args: unknown[]) => {
-    if (process.stdout && typeof process.stdout.write === "function") {
+    if (hasStdout()) {
       try {
-        process.stdout.write(formatLog("info", args) + "\n");
+        process.stdout!.write(formatLog("info", args) + "\n");
       } catch {
         originalLog(...args);
       }
     } else {
-      originalLog(...args);
+      originalLog(formatLog("info", args));
     }
   };
 
   console.warn = (...args: unknown[]) => {
-    if (process.stdout && typeof process.stdout.write === "function") {
+    if (hasStdout()) {
       try {
-        process.stdout.write(formatLog("warn", args) + "\n");
+        process.stdout!.write(formatLog("warn", args) + "\n");
       } catch {
         originalWarn(...args);
       }
     } else {
-      originalWarn(...args);
+      originalWarn(formatLog("warn", args));
     }
   };
 
   console.error = (...args: unknown[]) => {
-    if (process.stderr && typeof process.stderr.write === "function") {
+    if (hasStderr()) {
       try {
-        process.stderr.write(formatLog("error", args) + "\n");
+        process.stderr!.write(formatLog("error", args) + "\n");
       } catch {
         originalError(...args);
       }
     } else {
-      originalError(...args);
+      originalError(formatLog("error", args));
     }
   };
 
   console.debug = (...args: unknown[]) => {
-    if (process.stdout && typeof process.stdout.write === "function") {
+    if (hasStdout()) {
       try {
-        process.stdout.write(formatLog("debug", args) + "\n");
+        process.stdout!.write(formatLog("debug", args) + "\n");
       } catch {
         originalDebug(...args);
       }
     } else {
-      originalDebug(...args);
+      originalDebug(formatLog("debug", args));
     }
   };
 }
